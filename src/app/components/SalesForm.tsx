@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { getSalesNames, getOutletNames, getProducts, Product } from '@/lib/redis';
 import SalesLoginModal from './SalesLoginModal';
 
@@ -669,15 +669,15 @@ const SalesForm = () => {
         location = address.country;
       }
       
-      setLocationInfo(location || 'Location unknown');
+      setLocationInfo(location || 'Unknown Location');
     } catch (error) {
-      console.error('Error getting location:', error);
-      setLocationInfo('Location unavailable');
+      console.error('Error getting location info:', error);
+      setLocationInfo('Location Info Unavailable');
     }
   };
 
   // Function to check GPS status and signal strength with continuous monitoring
-  const checkGPS = async () => {
+  const checkGPS = useCallback(async () => {
     // Skip GPS check on Windows devices
     const ua = window.navigator.userAgent;
     if (/(Windows)/i.test(ua)) {
@@ -738,13 +738,14 @@ const SalesForm = () => {
           maximumAge: 0
         }
       );
-
+      
+      // Store the watch ID for cleanup
       setWatchId(id);
     } catch (error) {
-      console.error('GPS Setup Error:', error);
+      console.error('GPS check error:', error);
       setGpsStatus({ status: 'error', message: 'ERROR: GPS check failed' });
     }
-  };
+  }, [locationInfo, watchId, setWatchId, setLastPosition, setGpsStatus]);
 
   // Update GPS status when location info changes
   useEffect(() => {

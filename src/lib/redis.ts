@@ -40,7 +40,7 @@ export async function verifySalesPassword(salesId: string, password: string) {
 export async function getOutletNames(): Promise<Record<string, string>> {
   try {
     const outlets = await redis.hgetall('outlets');
-    return outlets || {};
+    return outlets as Record<string, string> || {};
   } catch (error) {
     console.error('Error getting outlet names:', error);
     return {};
@@ -75,7 +75,28 @@ export interface Product {
 export async function getProducts(): Promise<Record<string, Product>> {
   try {
     const products = await redis.hgetall('products');
-    return products || {};
+    
+    // Type-safe transformation of the result
+    const typedProducts: Record<string, Product> = {};
+    
+    // If products exist, process them
+    if (products) {
+      Object.entries(products).forEach(([key, value]) => {
+        // Parse the JSON string stored in Redis
+        try {
+          if (typeof value === 'string') {
+            typedProducts[key] = JSON.parse(value) as Product;
+          } else {
+            // If already an object, try to cast it
+            typedProducts[key] = value as unknown as Product;
+          }
+        } catch (e) {
+          console.error(`Error parsing product ${key}:`, e);
+        }
+      });
+    }
+    
+    return typedProducts;
   } catch (error) {
     console.error('Error getting products:', error);
     return {};
