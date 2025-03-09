@@ -7,6 +7,7 @@ import makeWASocket, {
 import { Boom } from '@hapi/boom';
 import fs from 'fs';
 import path from 'path';
+import QRCode from 'qrcode';
 
 // Keep track of the global WhatsApp instance
 let waSocket: WASocket | null = null;
@@ -104,7 +105,7 @@ async function connectToWhatsApp(force = false): Promise<boolean> {
     // Simplify the socket creation to ensure compatibility
     waSocket = makeWASocket({
       auth: state,
-      printQRInTerminal: true,
+      printQRInTerminal: false, // Disable built-in QR printing
       browser: ['Chrome', '', ''],
       connectTimeoutMs: 60000,
       qrTimeout: 120000,
@@ -117,9 +118,15 @@ async function connectToWhatsApp(force = false): Promise<boolean> {
       const { connection, lastDisconnect, qr } = update;
       
       if (qr) {
-        qrCode = qr;
-        saveQRCode(qr); // Save QR code to file
-        console.log('New QR code received');
+        try {
+          // Generate QR code as data URL
+          qrCode = await QRCode.toDataURL(qr);
+          saveQRCode(qrCode);
+          console.log('New QR code generated');
+        } catch (error) {
+          console.error('Error generating QR code:', error);
+          qrCode = null;
+        }
         isConnecting = false;
       }
       
@@ -127,7 +134,7 @@ async function connectToWhatsApp(force = false): Promise<boolean> {
         isConnected = true;
         isConnecting = false;
         qrCode = null;
-        saveQRCode(null); // Delete QR code file
+        saveQRCode(null);
         console.log('Connected to WhatsApp!');
       } else if (connection === 'close') {
         const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;

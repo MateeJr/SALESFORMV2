@@ -18,7 +18,7 @@
     "jimp": "0.16.13",
     "link-preview-js": "^3.0.14",
     "next": "15.1.7",
-    "qrcode-terminal": "^0.12.0",
+    "qrcode": "^1.5.3",
     "qrcode.react": "^4.2.0",
     "react": "18.2.0",
     "react-beautiful-dnd": "^13.1.1",
@@ -27,9 +27,10 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@types/node": "^20",
+    "@types/qrcode": "^1.5.5",
     "@types/react": "^18",
     "@types/react-dom": "^18",
-    "eslint": "^9",
+    "eslint": "^8",
     "eslint-config-next": "15.1.7",
     "postcss": "^8",
     "tailwindcss": "^3.4.1",
@@ -38,12 +39,14 @@
   "overrides": {
     "jimp": "0.16.13",
     "react": "18.2.0",
-    "react-dom": "18.2.0"
+    "react-dom": "18.2.0",
+    "eslint": "^8.56.0"
   },
   "resolutions": {
     "jimp": "0.16.13",
     "react": "18.2.0",
-    "react-dom": "18.2.0"
+    "react-dom": "18.2.0",
+    "eslint": "^8.56.0"
   },
   "npmConfig": {
     "legacy-peer-deps": true
