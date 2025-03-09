@@ -1,10 +1,5 @@
 import { NextResponse } from 'next/server';
 import whatsappService from '@/lib/whatsapp-simple';
-import fs from 'fs';
-import path from 'path';
-
-// QR code file path
-const QR_CODE_FILE = path.join(process.cwd(), 'whatsapp-auth', 'qrcode.txt');
 
 export async function GET(request: Request) {
   try {
@@ -32,18 +27,6 @@ export async function GET(request: Request) {
       qr = whatsappService.getQR();
     }
     
-    // If no QR code from service but file exists, read from file
-    if (!qr && !isConnected) {
-      try {
-        if (fs.existsSync(QR_CODE_FILE)) {
-          qr = fs.readFileSync(QR_CODE_FILE, 'utf8');
-          console.log('Retrieved QR code from file');
-        }
-      } catch (error) {
-        console.error('Error reading QR code from file:', error);
-      }
-    }
-    
     // Connection is in progress if we have a QR code
     const isConnecting = !isConnected && !!qr;
     
@@ -56,18 +39,6 @@ export async function GET(request: Request) {
       
       // Check again for QR code after initiating connection
       qr = whatsappService.getQR();
-      
-      // If still no QR but file exists, read from file
-      if (!qr) {
-        try {
-          if (fs.existsSync(QR_CODE_FILE)) {
-            qr = fs.readFileSync(QR_CODE_FILE, 'utf8');
-            console.log('Retrieved QR code from file after connection attempt');
-          }
-        } catch (error) {
-          console.error('Error reading QR code from file after connection attempt:', error);
-        }
-      }
       
       // Return response based on current state
       return NextResponse.json({
