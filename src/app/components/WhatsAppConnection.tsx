@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import QRCode from 'qrcode.react';
+import { QRCodeSVG } from 'qrcode.react';
 
 const WhatsAppConnection = () => {
   const [isConnected, setIsConnected] = useState(false);
@@ -51,7 +51,7 @@ const WhatsAppConnection = () => {
           </div>
         ) : qrCode ? (
           <div className="bg-white p-2 rounded-lg">
-            <QRCode value={qrCode} size={200} />
+            <QRCodeSVG value={qrCode} size={200} />
           </div>
         ) : (
           <div className="text-yellow-400 animate-pulse">
