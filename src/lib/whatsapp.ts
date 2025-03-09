@@ -2,11 +2,12 @@ import makeWASocket, {
   DisconnectReason,
   useMultiFileAuthState,
   WASocket,
+  makeCacheableSignalKeyStore,
   makeInMemoryStore,
   proto
 } from '@whiskeysockets/baileys';
+import * as QRCode from 'qrcode';
 import { Boom } from '@hapi/boom';
-import qrcode from 'qrcode-terminal';
 import path from 'path';
 import fs from 'fs';
 
@@ -81,7 +82,12 @@ class WhatsAppService {
         if (qr && !this.isConnected) {
           this.qr = qr;
           if (!this.isConnecting) {
-            qrcode.generate(qr, { small: true });
+            // Output QR code to console
+            QRCode.toString(qr, { type: 'terminal', small: true }, (err, url) => {
+              if (!err) {
+                console.log(url);
+              }
+            });
             this.isConnecting = true;
           }
         }

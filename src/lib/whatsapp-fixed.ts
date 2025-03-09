@@ -6,7 +6,7 @@ import makeWASocket, {
   proto
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
-import qrcode from 'qrcode-terminal';
+import * as QRCode from 'qrcode';
 import path from 'path';
 import fs from 'fs';
 
@@ -101,7 +101,12 @@ class WhatsAppService {
         if (qr) {
           this.qr = qr;
           console.log('New QR code received');
-          qrcode.generate(qr, { small: true });
+          // Output QR code to console
+          QRCode.toString(qr, { type: 'terminal', small: true }, (err, url) => {
+            if (!err) {
+              console.log(url);
+            }
+          });
         }
 
         if (connection === 'open') {
