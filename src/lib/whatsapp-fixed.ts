@@ -209,7 +209,7 @@ class WhatsAppService {
     // Close the connection if it exists
     if (this.client) {
       try {
-        // @ts-ignore - baileys doesn't expose a proper close method in types
+        // @ts-expect-error - baileys doesn't expose a proper close method in types but it exists at runtime
         if (typeof this.client.close === 'function') {
           await this.client.close();
         }

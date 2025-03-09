@@ -873,7 +873,7 @@ const SalesForm = () => {
     }, 7000);
 
     return () => clearTimeout(timeout);
-  }, []);
+  }, [checkGPS]); // Added checkGPS to dependencies
 
   // Close product dropdown when clicking outside
   useEffect(() => {

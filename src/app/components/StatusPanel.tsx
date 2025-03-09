@@ -23,9 +23,6 @@ const StatusPanel = () => {
       setWebStatus('error');
     };
 
-    window.addEventListener('error', handleError);
-    window.addEventListener('unhandledrejection', handleError);
-
     // Get counts
     const getCounts = async () => {
       try {
@@ -98,44 +95,39 @@ const StatusPanel = () => {
       }
     };
 
-    // Set up intersection observer for visibility
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        setIsVisible(entry.isIntersecting);
+    // Store ref value at the start of the effect
+    const currentStatusRef = statusRef.current;
+    
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
         if (entry.isIntersecting) {
+          checkServer();
           checkNetwork();
-          // Start frequent updates when visible
-          networkIntervalRef.current = setInterval(checkNetwork, 2000);
-        } else {
-          // Clear frequent updates when not visible
-          if (networkIntervalRef.current) {
-            clearInterval(networkIntervalRef.current);
-          }
         }
-      },
-      { threshold: 0.1 }
-    );
+      });
+    });
 
-    if (statusRef.current) {
-      observer.observe(statusRef.current);
+    if (currentStatusRef) {
+      observer.observe(currentStatusRef);
     }
+
+    const interval = setInterval(checkServer, 30000);
+    networkIntervalRef.current = setInterval(checkNetwork, 30000);
+
+    window.addEventListener('error', handleError);
+    window.addEventListener('unhandledrejection', handleError);
 
     checkServer();
     getDeviceInfo();
     getIpAddress();
-
-    // Set up periodic checks
-    const interval = setInterval(() => {
-      checkServer();
-    }, 30000); // Check every 30 seconds
 
     return () => {
       clearInterval(interval);
       if (networkIntervalRef.current) {
         clearInterval(networkIntervalRef.current);
       }
-      if (statusRef.current) {
-        observer.unobserve(statusRef.current);
+      if (currentStatusRef) {
+        observer.unobserve(currentStatusRef);
       }
       window.removeEventListener('error', handleError);
       window.removeEventListener('unhandledrejection', handleError);
