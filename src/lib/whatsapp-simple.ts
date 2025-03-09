@@ -1,14 +1,14 @@
 import makeWASocket, { 
+  useMultiFileAuthState,
   DisconnectReason,
   WASocket,
-  BaileysEventMap,
-  initAuthCreds,
-  proto,
-  AuthenticationState,
-  AuthenticationCreds
+  makeCacheableSignalKeyStore,
+  BaileysEventMap
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
-import * as QRCode from 'qrcode';
+import fs from 'fs';
+import path from 'path';
+import QRCode from 'qrcode';
 
 // Keep track of the global WhatsApp instance
 let waSocket: WASocket | null = null;
@@ -18,164 +18,171 @@ let isConnecting = false;
 let lastConnectionAttempt = 0;
 const COOLDOWN_PERIOD = 30000; // 30 seconds
 
-// In-memory auth state for serverless environments
-let authState = { creds: initAuthCreds() };
-let keys = new Map<string, any>();
+// Create and ensure auth folder exists
+const AUTH_FOLDER = path.join(process.cwd(), 'whatsapp-auth');
+if (!fs.existsSync(AUTH_FOLDER)) {
+  fs.mkdirSync(AUTH_FOLDER, { recursive: true });
+}
 
-// Function to create in-memory auth state
-const useInMemoryAuthState = () => {
-  // Create a simple signal key store
-  const signalKeyStore = {
-    get: async (type: string, ids: string[]) => {
-      const keyData: Record<string, any> = {};
-      for (const id of ids) {
-        const key = `${type}.${id}`;
-        if (keys.has(key)) {
-          keyData[id] = keys.get(key);
-        }
-      }
-      return keyData;
-    },
-    set: async (data: any) => {
-      for (const type in data) {
-        for (const id in data[type]) {
-          const value = data[type][id];
-          const key = `${type}.${id}`;
-          keys.set(key, value);
-        }
-      }
-    }
-  };
+// Add a file-based QR code storage for persistence
+const QR_CODE_FILE = path.join(process.cwd(), 'whatsapp-auth', 'qrcode.txt');
 
-  return {
-    state: {
-      creds: authState.creds,
-      keys: signalKeyStore,
-    },
-    saveCreds: async () => {
-      // Just update the in-memory authState
-      authState = { creds: { ...authState.creds } };
+// Load QR code from file if it exists
+try {
+  if (fs.existsSync(QR_CODE_FILE)) {
+    qrCode = fs.readFileSync(QR_CODE_FILE, 'utf8');
+    console.log('Loaded QR code from file');
+  }
+} catch (error) {
+  console.error('Error loading QR code from file:', error);
+}
+
+// Function to save QR code to file
+function saveQRCode(qr: string | null) {
+  try {
+    if (qr) {
+      fs.writeFileSync(QR_CODE_FILE, qr);
+      console.log('Saved QR code to file');
+    } else if (fs.existsSync(QR_CODE_FILE)) {
+      fs.unlinkSync(QR_CODE_FILE);
+      console.log('Deleted QR code file');
     }
-  };
-};
+  } catch (error) {
+    console.error('Error saving QR code to file:', error);
+  }
+}
 
 /**
- * Connect to WhatsApp
- * @param force Force reconnect even if already connected
- * @returns Promise<boolean> True if connected or connecting, false otherwise
+ * Initiate a WhatsApp connection
  */
 async function connectToWhatsApp(force = false): Promise<boolean> {
-  // If already connected and not forcing, return
-  if (isConnected && !force) {
-    console.log('Already connected to WhatsApp, not reconnecting');
-    return true;
-  }
-  
-  // Check cooldown period
-  const now = Date.now();
-  if (!force && now - lastConnectionAttempt < COOLDOWN_PERIOD) {
-    console.log('Connection attempt cooldown period, waiting...');
+  // Prevent multiple simultaneous connection attempts
+  if (isConnecting) {
+    console.log('Already attempting to connect');
     return false;
   }
   
-  // Update connection attempt timestamp
-  lastConnectionAttempt = now;
+  // Don't reconnect if already connected
+  if (isConnected && waSocket && !force) {
+    console.log('Already connected to WhatsApp');
+    return true;
+  }
   
-  // Set state to connecting
+  // Enforce cooldown period
+  const now = Date.now();
+  if (!force && now - lastConnectionAttempt < COOLDOWN_PERIOD) {
+    console.log('Connection attempt on cooldown');
+    return false;
+  }
+  
+  lastConnectionAttempt = now;
   isConnecting = true;
   
   try {
     console.log('Loading auth state...');
-    const { state, saveCreds } = useInMemoryAuthState();
+    const { state, saveCreds } = await useMultiFileAuthState(AUTH_FOLDER);
     
     // Close existing connection if any
     if (waSocket) {
       console.log('Closing existing connection...');
-      
-      const clientAny = waSocket as any;
-      if (clientAny.ws && typeof clientAny.ws.close === 'function') {
-        clientAny.ws.close();
+      try {
+        waSocket.ev.removeAllListeners('connection.update' as keyof BaileysEventMap);
+        await (waSocket as any).end('session ended');
+        waSocket = null;
+      } catch (error) {
+        console.error('Error ending connection:', error);
       }
-      
-      if (typeof waSocket.logout === 'function') {
-        try {
-          await waSocket.logout();
-        } catch (error) {
-          console.error('Error logging out:', error);
-        }
-      }
-      
-      waSocket = null;
     }
     
-    // Clear existing QR code if forcing reconnect
-    if (force) {
-      qrCode = null;
-      isConnected = false;
-    }
+    console.log('Creating new WhatsApp connection...');
     
-    // Create new socket connection
-    console.log('Creating new WhatsApp socket connection...');
+    // Simplify the socket creation to ensure compatibility
     waSocket = makeWASocket({
       auth: state,
-      printQRInTerminal: false
+      printQRInTerminal: false, // Disable built-in QR printing
+      browser: ['Chrome', '', ''],
+      connectTimeoutMs: 60000,
+      qrTimeout: 120000,
+      defaultQueryTimeoutMs: 60000
     });
     
-    // Save credentials on update
-    waSocket.ev.on('creds.update', saveCreds);
-    
-    // Handle connection updates
+    // Listen for connection updates
     waSocket.ev.on('connection.update', async (update) => {
+      console.log('Connection update:', update);
       const { connection, lastDisconnect, qr } = update;
-      console.log(`Connection update: ${connection}`);
       
-      if (qr && !isConnected) {
+      if (qr) {
         try {
           // Generate QR code as data URL
           qrCode = await QRCode.toDataURL(qr);
+          saveQRCode(qrCode);
           console.log('New QR code generated');
         } catch (error) {
           console.error('Error generating QR code:', error);
+          qrCode = null;
         }
+        isConnecting = false;
       }
       
       if (connection === 'open') {
         isConnected = true;
         isConnecting = false;
         qrCode = null;
+        saveQRCode(null);
         console.log('Connected to WhatsApp!');
       } else if (connection === 'close') {
-        isConnected = false;
-        
-        // Check if we should reconnect
         const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
-        console.log(`Connection closed with status: ${statusCode}`);
+        console.log(`Disconnected from WhatsApp, status code: ${statusCode}`);
         
-        if (statusCode === DisconnectReason.loggedOut) {
-          console.log('Logged out, clearing auth...');
-          qrCode = null;
+        // Special handling for code 515 (restart required)
+        if (statusCode === 515) {
+          console.log('Restart required (code 515), reconnecting...');
+          isConnected = false;
+          isConnecting = false;
           
-          // Reset auth state
-          authState = { creds: initAuthCreds() };
-          keys = new Map<string, any>();
-        } else if (!isConnecting) {
-          // Auto reconnect if not deliberately disconnecting
-          console.log('Unexpected disconnect, reconnecting...');
-          setTimeout(() => connectToWhatsApp(), 5000);
+          // Wait a bit before reconnecting
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          
+          // Force reconnect
+          connectToWhatsApp(true).catch(err => {
+            console.error('Failed to reconnect after 515 error:', err);
+          });
+          return;
         }
+        
+        // Special handling for new login indication
+        if (update.isNewLogin) {
+          console.log('New login detected, reconnecting...');
+          isConnected = false;
+          isConnecting = false;
+          
+          // Wait a bit before reconnecting
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          
+          // Force reconnect
+          connectToWhatsApp(true).catch(err => {
+            console.error('Failed to reconnect after new login:', err);
+          });
+          return;
+        }
+        
+        isConnected = false;
+        isConnecting = false;
       }
     });
     
-    // Handle messages
-    waSocket.ev.on('messages.upsert', async (m) => {
-      console.log(`Received ${m.messages.length} new messages`);
-      // Process messages here
-    });
+    // Save credentials when updated
+    waSocket.ev.on('creds.update', saveCreds);
     
-    console.log('WhatsApp initialization complete');
-    return true;
+    // Wait for connection to establish or QR to be generated
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    
+    console.log('Connection setup complete, connected:', isConnected, 'QR code available:', !!qrCode);
+    isConnecting = false;
+    return isConnected;
   } catch (error) {
-    console.error('Error connecting to WhatsApp:', error);
+    console.error('Failed to connect to WhatsApp:', error);
+    isConnected = false;
     isConnecting = false;
     return false;
   }
@@ -184,43 +191,33 @@ async function connectToWhatsApp(force = false): Promise<boolean> {
 /**
  * Delete the WhatsApp session
  */
-async function deleteWhatsAppSession(): Promise<boolean> {
+async function deleteSession(): Promise<boolean> {
   try {
     console.log('Deleting WhatsApp session...');
     
-    // Close existing connection if any
+    // End the connection if it exists
     if (waSocket) {
-      try {
-        const clientAny = waSocket as any;
-        
-        // Try to log out properly
-        if (typeof waSocket.logout === 'function') {
-          await waSocket.logout();
-        }
-        
-        // Try to close WebSocket
-        if (clientAny.ws && typeof clientAny.ws.close === 'function') {
-          clientAny.ws.close();
-        }
-      } catch (error) {
-        console.error('Error closing WhatsApp connection:', error);
-      }
+      waSocket.ev.removeAllListeners('connection.update' as keyof BaileysEventMap);
+      await (waSocket as any).end('session ended');
+      waSocket = null;
     }
     
     // Reset state
-    waSocket = null;
     isConnected = false;
     qrCode = null;
+    saveQRCode(null); // Delete QR code file
     isConnecting = false;
     
-    // Reset in-memory auth state
-    authState = { creds: initAuthCreds() };
-    keys = new Map<string, any>();
+    // Delete auth files
+    const files = fs.readdirSync(AUTH_FOLDER);
+    for (const file of files) {
+      fs.unlinkSync(path.join(AUTH_FOLDER, file));
+    }
     
     console.log('WhatsApp session deleted');
     return true;
   } catch (error) {
-    console.error('Error deleting WhatsApp session:', error);
+    console.error('Failed to delete WhatsApp session:', error);
     return false;
   }
 }
@@ -325,7 +322,7 @@ async function sendMessage(to: string, message: string, images?: string[]): Prom
         }
         // Delete session and wait before retry
         try {
-          await deleteWhatsAppSession();
+          await deleteSession();
         } catch (e) {
           console.error('Error deleting session:', e);
         }
@@ -494,7 +491,7 @@ export default {
   connect: connectToWhatsApp,
   isConnected: isConnectedToWhatsApp,
   getQR: getQRCode,
-  deleteSession: deleteWhatsAppSession,
+  deleteSession,
   sendMessage,
   processTemplate
 }; 

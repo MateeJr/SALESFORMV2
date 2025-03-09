@@ -81,11 +81,30 @@ const StatusPanel = () => {
       }
     };
 
-    // Check network status
+    // Check network status with throttling
     const checkNetwork = async () => {
+      // Don't check too frequently - implement throttling
+      const now = Date.now();
+      const lastCheck = window.localStorage.getItem('lastNetworkCheck');
+      
+      if (lastCheck) {
+        const timeSinceLastCheck = now - parseInt(lastCheck, 10);
+        // If last check was less than 1 minute ago, skip this check
+        if (timeSinceLastCheck < 60000) {
+          return;
+        }
+      }
+      
       try {
+        // Store current check timestamp
+        window.localStorage.setItem('lastNetworkCheck', now.toString());
+        
         const startTime = performance.now();
-        await fetch('https://www.google.com/favicon.ico', { mode: 'no-cors' });
+        await fetch('https://www.google.com/favicon.ico', { 
+          mode: 'no-cors',
+          // Add cache busting to prevent cached responses
+          cache: 'no-store'
+        });
         const endTime = performance.now();
         const latency = endTime - startTime;
         setPingTime(Math.round(latency));
@@ -111,8 +130,9 @@ const StatusPanel = () => {
       observer.observe(currentStatusRef);
     }
 
-    const interval = setInterval(checkServer, 30000);
-    networkIntervalRef.current = setInterval(checkNetwork, 30000);
+    // Reduced check frequency - every 5 minutes instead of 30 seconds
+    const interval = setInterval(checkServer, 300000); // 5 minutes
+    networkIntervalRef.current = setInterval(checkNetwork, 300000); // 5 minutes
 
     window.addEventListener('error', handleError);
     window.addEventListener('unhandledrejection', handleError);

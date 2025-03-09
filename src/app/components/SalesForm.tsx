@@ -698,22 +698,39 @@ const SalesForm = () => {
         navigator.geolocation.clearWatch(watchId);
       }
 
-      // Start continuous monitoring
+      // Options for watchPosition to reduce frequency
+      const options = {
+        enableHighAccuracy: true,
+        maximumAge: 30000,        // Use cached position if less than 30 seconds old
+        timeout: 30000,           // Wait up to 30 seconds for a reading
+      };
+
+      // Start continuous monitoring with reduced frequency
       const id = navigator.geolocation.watchPosition(
         (position) => {
-          setLastPosition(position);
-          const accuracy = position.coords.accuracy;
-          
-          // Get location info when position changes
-          getLocationInfo(position.coords.latitude, position.coords.longitude);
-          
-          // Update GPS status based on accuracy
-          if (accuracy <= 20) {
-            setGpsStatus({ status: 'strong', message: `GPS Signal: Kuat (${locationInfo})` });
-          } else if (accuracy <= 100) {
-            setGpsStatus({ status: 'weak', message: `GPS Signal: Lemah (${locationInfo})` });
-          } else {
-            setGpsStatus({ status: 'weak', message: `GPS Signal: Lemah (${Math.round(accuracy)}m) (${locationInfo})` });
+          // Only update if position has changed significantly (more than 10 meters)
+          if (!lastPosition || 
+              calculateDistance(
+                position.coords.latitude, 
+                position.coords.longitude,
+                lastPosition.coords.latitude,
+                lastPosition.coords.longitude
+              ) > 10) {
+                
+            setLastPosition(position);
+            const accuracy = position.coords.accuracy;
+            
+            // Get location info when position changes significantly
+            getLocationInfo(position.coords.latitude, position.coords.longitude);
+            
+            // Update GPS status based on accuracy
+            if (accuracy <= 20) {
+              setGpsStatus({ status: 'strong', message: `GPS Signal: Kuat (${locationInfo})` });
+            } else if (accuracy <= 100) {
+              setGpsStatus({ status: 'weak', message: `GPS Signal: Lemah (${locationInfo})` });
+            } else {
+              setGpsStatus({ status: 'weak', message: `GPS Signal: Lemah (${Math.round(accuracy)}m) (${locationInfo})` });
+            }
           }
         },
         (error) => {
@@ -729,23 +746,34 @@ const SalesForm = () => {
               setGpsStatus({ status: 'error', message: 'GPS Signal: Timeout' });
               break;
             default:
-              setGpsStatus({ status: 'error', message: 'GPS Error: ' + error.message });
+              setGpsStatus({ status: 'error', message: 'GPS Signal: Error tidak diketahui' });
           }
         },
-        {
-          enableHighAccuracy: true,
-          timeout: 30000,
-          maximumAge: 0
-        }
+        options
       );
       
-      // Store the watch ID for cleanup
       setWatchId(id);
     } catch (error) {
       console.error('GPS check error:', error);
       setGpsStatus({ status: 'error', message: 'ERROR: GPS check failed' });
     }
-  }, [locationInfo, watchId, setWatchId, setLastPosition, setGpsStatus]);
+  }, [locationInfo, watchId, setWatchId, setLastPosition, setGpsStatus, lastPosition, getLocationInfo]);
+
+  // Helper function to calculate distance between coordinates in meters
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371e3; // Earth radius in meters
+    const φ1 = lat1 * Math.PI/180;
+    const φ2 = lat2 * Math.PI/180;
+    const Δφ = (lat2-lat1) * Math.PI/180;
+    const Δλ = (lon2-lon1) * Math.PI/180;
+
+    const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ/2) * Math.sin(Δλ/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+    return R * c; // Distance in meters
+  };
 
   // Update GPS status when location info changes
   useEffect(() => {
@@ -861,20 +889,50 @@ const SalesForm = () => {
     }
   };
 
-  // Run checks when component mounts
+  // Check camera, network, and GPS on mount
   useEffect(() => {
-    checkGPS();
-    checkCamera();
-    checkNetwork();
-
+    // Only run GPS tracking if form is visible (not when minimized/backgrounded)
+    let visibilityHandler: () => void;
+    
+    // Create a throttled version of checkGPS
+    let lastGPSCheck = 0;
+    const throttledCheckGPS = () => {
+      const now = Date.now();
+      if (now - lastGPSCheck > 60000) { // Only run once per minute at most
+        lastGPSCheck = now;
+        checkGPS();
+      }
+    };
+    
+    // Check if page is visible
+    if (!document.hidden) {
+      checkCamera();
+      checkNetwork();
+      throttledCheckGPS();
+      
+      // Set up visibility change handler
+      visibilityHandler = () => {
+        if (!document.hidden) {
+          throttledCheckGPS();
+        }
+      };
+      
+      document.addEventListener('visibilitychange', visibilityHandler);
+    }
+    
     // Set timeout only for camera and network checks
     const timeout = setTimeout(() => {
       setCameraStatus(prev => prev.status === 'checking' ? { status: 'error', message: 'ERROR: Camera timeout' } : prev);
       setNetworkStatus(prev => prev.status === 'checking' ? { status: 'error', message: 'ERROR: Network timeout' } : prev);
     }, 7000);
 
-    return () => clearTimeout(timeout);
-  }, [checkGPS]); // Added checkGPS to dependencies
+    return () => {
+      clearTimeout(timeout);
+      if (visibilityHandler) {
+        document.removeEventListener('visibilitychange', visibilityHandler);
+      }
+    };
+  }, [checkGPS, checkCamera, checkNetwork, setCameraStatus, setNetworkStatus]);
 
   // Close product dropdown when clicking outside
   useEffect(() => {
