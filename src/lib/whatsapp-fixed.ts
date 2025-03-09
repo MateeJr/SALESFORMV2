@@ -214,16 +214,25 @@ class WhatsAppService {
     // Close the connection if it exists
     if (this.client) {
       try {
-        // @ts-expect-error - baileys doesn't expose a proper close method in types but it exists at runtime
-        if (typeof this.client.close === 'function') {
-          await this.client.close();
+        // Call end() which is the proper documented way
+        // The socket might also have a logout() method we can try
+        if (typeof this.client.logout === 'function') {
+          await this.client.logout();
         }
+        
+        // Try to call end() on the socket's websocket connection
+        // @ts-expect-error - accessing internal properties to ensure clean shutdown
+        if (this.client.ws && typeof this.client.ws.close === 'function') {
+          // @ts-expect-error - accessing internal properties
+          this.client.ws.close();
+        }
+        
+        this.client = null;
       } catch (error) {
         console.error('Error closing WhatsApp connection:', error);
       }
     }
     
-    this.client = null;
     this.isConnected = false;
     this.qr = null;
     this.isConnecting = false;

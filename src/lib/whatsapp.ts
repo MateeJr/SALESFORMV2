@@ -225,6 +225,25 @@ class WhatsAppService {
   }
 
   async deleteSession() {
+    // Close the connection if it exists
+    if (this.client) {
+      try {
+        // Call logout which is documented
+        if (typeof this.client.logout === 'function') {
+          await this.client.logout();
+        }
+        
+        // Try to call close on the websocket if available
+        // @ts-expect-error - accessing internal properties to ensure clean shutdown
+        if (this.client.ws && typeof this.client.ws.close === 'function') {
+          // @ts-expect-error - accessing internal properties
+          this.client.ws.close();
+        }
+      } catch (error) {
+        console.error('Error closing WhatsApp connection:', error);
+      }
+    }
+    
     this.client = null;
     this.isConnected = false;
     this.qr = null;
