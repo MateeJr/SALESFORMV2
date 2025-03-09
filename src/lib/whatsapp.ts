@@ -233,11 +233,10 @@ class WhatsAppService {
           await this.client.logout();
         }
         
-        // Try to call close on the websocket if available
-        // @ts-expect-error - accessing internal properties to ensure clean shutdown
-        if (this.client.ws && typeof this.client.ws.close === 'function') {
-          // @ts-expect-error - accessing internal properties
-          this.client.ws.close();
+        // Try to close any internal connections using type assertion
+        const clientAny = this.client as any;
+        if (clientAny.ws && typeof clientAny.ws.close === 'function') {
+          clientAny.ws.close();
         }
       } catch (error) {
         console.error('Error closing WhatsApp connection:', error);

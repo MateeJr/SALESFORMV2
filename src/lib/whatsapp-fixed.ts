@@ -214,17 +214,15 @@ class WhatsAppService {
     // Close the connection if it exists
     if (this.client) {
       try {
-        // Call end() which is the proper documented way
-        // The socket might also have a logout() method we can try
+        // Call logout which is documented
         if (typeof this.client.logout === 'function') {
           await this.client.logout();
         }
         
-        // Try to call end() on the socket's websocket connection
-        // @ts-expect-error - accessing internal properties to ensure clean shutdown
-        if (this.client.ws && typeof this.client.ws.close === 'function') {
-          // @ts-expect-error - accessing internal properties
-          this.client.ws.close();
+        // Try to close any internal connections using type assertion
+        const clientAny = this.client as any;
+        if (clientAny.ws && typeof clientAny.ws.close === 'function') {
+          clientAny.ws.close();
         }
         
         this.client = null;
