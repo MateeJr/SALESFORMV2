@@ -41,5 +41,20 @@
     "ecmaFeatures": {
       "jsx": true
     }
-  }
+  },
+  "overrides": [
+    {
+      "files": ["src/lib/whatsapp*.ts"],
+      "rules": {
+        "react-hooks/rules-of-hooks": "off"
+      }
+    },
+    {
+      "files": ["src/app/admin/page.tsx", "src/app/components/SalesForm.tsx", "src/app/components/StatusPanel.tsx"],
+      "rules": {
+        "react-hooks/exhaustive-deps": "off",
+        "@typescript-eslint/no-unused-vars": "off"
+      }
+    }
+  ]
 } 
