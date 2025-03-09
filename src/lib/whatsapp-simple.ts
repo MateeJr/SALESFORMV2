@@ -2,7 +2,8 @@ import makeWASocket, {
   useMultiFileAuthState,
   DisconnectReason,
   WASocket,
-  makeCacheableSignalKeyStore
+  makeCacheableSignalKeyStore,
+  BaileysEventMap
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import fs from 'fs';
@@ -85,18 +86,11 @@ async function connectToWhatsApp(force = false): Promise<boolean> {
     if (waSocket) {
       console.log('Closing existing connection...');
       try {
-        waSocket.ev.removeAllListeners();
-        try {
-          // @ts-ignore - type definitions don't include end method
-          if (typeof waSocket.end === 'function') {
-            await waSocket.end();
-          }
-        } catch (endError) {
-          console.error('Error ending connection:', endError);
-        }
+        waSocket.ev.removeAllListeners('connection.update' as keyof BaileysEventMap);
+        await (waSocket as any).end('session ended');
         waSocket = null;
       } catch (error) {
-        console.error('Error closing connection:', error);
+        console.error('Error ending connection:', error);
       }
     }
     
@@ -203,15 +197,8 @@ async function deleteSession(): Promise<boolean> {
     
     // End the connection if it exists
     if (waSocket) {
-      waSocket.ev.removeAllListeners();
-      try {
-        // @ts-ignore - type definitions don't include end method
-        if (typeof waSocket.end === 'function') {
-          await waSocket.end();
-        }
-      } catch (error) {
-        console.error('Error ending connection:', error);
-      }
+      waSocket.ev.removeAllListeners('connection.update' as keyof BaileysEventMap);
+      await (waSocket as any).end('session ended');
       waSocket = null;
     }
     
@@ -315,22 +302,19 @@ async function sendMessage(to: string, message: string, images?: string[]): Prom
       
       console.log('Message sent successfully');
       return result;
-    } catch (error) {
+    } catch (error: any) {
       console.error(`Failed to send message (Attempt ${retryCount + 1}/${maxRetries}):`, error);
       
       // Check if we need to force reconnect
       if (error.message?.includes('Connection Closed') || 
           error.message?.includes('Stream Errored') ||
-          error.output?.statusCode === 440) {
+          (error.output as any)?.statusCode === 440) {
         console.log('Connection issue detected, forcing reconnect...');
         isConnected = false;
         if (waSocket) {
           try {
-            waSocket.ev.removeAllListeners();
-            // @ts-ignore - type definitions don't include end method
-            if (typeof waSocket.end === 'function') {
-              await waSocket.end();
-            }
+            waSocket.ev.removeAllListeners('connection.update' as keyof BaileysEventMap);
+            await (waSocket as any).end('session ended');
           } catch (e) {
             console.error('Error closing socket:', e);
           }
